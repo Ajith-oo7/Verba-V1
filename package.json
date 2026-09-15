@@ -1,0 +1,11 @@
+{
+  "name": "verba",
+  "private": true,
+  "description": "Verba — Cherry, your professional representative for recruiter screening calls.",
+  "scripts": {
+    "dev:web": "npm run dev --prefix apps/web",
+    "db:push": "npm run db:push --prefix apps/web",
+    "db:generate": "npm run db:generate --prefix apps/web",
+    "eval:corpus": "node scripts/eval-corpus.js"
+  }
+}

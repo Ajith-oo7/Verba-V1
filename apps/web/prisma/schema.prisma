@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime       @default(now())
+  profile      Profile?
+  voiceProfile VoiceProfile?
+  preferences  Preference[]
+  voiceSamples VoiceSample[]
+  calls        Call[]
+}
+
+model Profile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName            String   @default("")
+  headline            String   @default("")
+  location            String   @default("")
+  linkedinUrl         String   @default("")
+  portfolioUrl        String   @default("")
+  workAuthorization   String   @default("")
+  requiresSponsorship Boolean  @default(false)
+  salaryMin           Int?
+  salaryMax           Int?
+  salaryCurrency      String   @default("USD")
+  startDate           String   @default("")
+  openToRelocation    Boolean  @default(false)
+  openToHybrid        Boolean  @default(true)
+  openToRemote        Boolean  @default(true)
+  availability        String   @default("")
+  resumeText          String   @default("")
+  resumePath          String   @default("")
+  skillsJson          String   @default("[]")
+  experienceJson      String   @default("[]")
+  educationJson       String   @default("[]")
+  certificationsJson  String   @default("[]")
+  cherryActive        Boolean  @default(false)
+  updatedAt           DateTime @updatedAt
+}
+
+model VoiceProfile {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consentAt           DateTime?
+  gender              String    @default("unknown")
+  referencePath       String    @default("")
+  cloneReady          Boolean   @default(false)
+  conversationJson    String    @default("{}")
+  ttsVoice            String    @default("hannah")
+  updatedAt           DateTime  @updatedAt
+}
+
+model VoiceSample {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  path       String
+  duration   Float    @default(0)
+  transcript String   @default("")
+  createdAt  DateTime @default(now())
+}
+
+model Preference {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String
+  sortOrder Int    @default(0)
+}
+
+model Call {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode           String           @default("practice")
+  status         String           @default("active")
+  roomName       String
+  recruiterName  String           @default("")
+  companyName    String           @default("")
+  jobTitle       String           @default("")
+  durationSec    Int?
+  interest       String           @default("")
+  summary        String           @default("")
+  followUpsJson  String           @default("[]")
+  questionsJson  String           @default("[]")
+  responsesJson  String           @default("[]")
+  evalJson       String           @default("{}")
+  startedAt      DateTime         @default(now())
+  endedAt        DateTime?
+  turns          TranscriptTurn[]
+}
+
+model TranscriptTurn {
+  id      String @id @default(cuid())
+  callId  String
+  call    Call   @relation(fields: [callId], references: [id], onDelete: Cascade)
+  speaker String
+  text    String
+  at      DateTime @default(now())
+}

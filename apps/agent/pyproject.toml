@@ -1,0 +1,29 @@
+[project]
+name = "verba-agent"
+version = "0.1.0"
+description = "Cherry — Verba recruiter-screening voice agent"
+requires-python = ">=3.11"
+dependencies = [
+  "livekit-agents[groq,silero]~=1.5",
+  "python-dotenv>=1.0.1",
+  "httpx>=0.27.0",
+  "numpy>=1.26.0",
+  "soundfile>=0.12.1",
+  "edge-tts>=7.0.0",
+  "av>=14.0.0",
+  "chatterbox-tts>=0.1.6",
+  "torch>=2.2.0",
+]
+
+[project.optional-dependencies]
+clone = [
+  "chatterbox-tts>=0.1.0",
+  "torch",
+]
+
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["agent", "orpheus_tts", "chatterbox_tts", "cherry_prompt", "context_client", "eval_transcript"]
