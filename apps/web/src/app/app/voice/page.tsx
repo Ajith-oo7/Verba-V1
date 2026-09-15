@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-type SlotId = "about" | "screen" | "style";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  ALL_REQUIRED_SLOTS,
+  OPEN_PROMPTS,
+  OPEN_TASK,
+  PROFESSIONAL_PASSAGE,
+  READING_PASSAGE,
+  RECRUITER_QUESTIONS,
+  RECRUITER_TASK,
+  type SlotId,
+} from "@/lib/voice-training";
 
 type SlotState = {
   blob: Blob | null;
@@ -10,42 +18,23 @@ type SlotState = {
   durationSec: number;
 };
 
-const SCRIPTS: Array<{
-  id: SlotId;
-  title: string;
-  minutes: string;
-  text: string;
-}> = [
-  {
-    id: "about",
-    title: "Passage 1 — About you",
-    minutes: "~1 minute",
-    text: `Okay, so… hi. This is me talking the way I normally would on a phone screen. I've been working in my field for a while now, and lately I've been thinking about what kind of team I want to grow with next. I'm not looking for a dramatic career reboot or anything — I just want work that feels a little bigger, a little more intentional. Day to day I like solving real problems with people who communicate clearly. I get energy from shipping things, not from endless process. When someone asks me to walk through my background, I usually keep it short: where I am now, what I've been focused on recently, and the kind of problems I enjoy. I don't need to recite every job from ten years ago. If a recruiter wants more detail, they'll ask, and I'm happy to go deeper then. Honestly, I sound better when I'm just talking, not performing. So yeah — this is my normal pace, my normal tone, the little pauses I take when I'm thinking. That's the version of me Cherry should learn.`,
-  },
-  {
-    id: "screen",
-    title: "Passage 2 — Screening answers",
-    minutes: "~1 minute",
-    text: `Alright, pretend this is a recruiter call. Where am I based? I'll just say my city normally, no speech about lifestyle. Work authorization — I'll state it plainly, no over-explaining. If they ask about sponsorship, yes or no, clean and calm. Salary? I give a range and leave room for the whole package, because that's how I actually talk about it. I'm not going to invent a number on the spot or sound desperate. Start date depends on notice, and I'll say that without padding it with filler. Hybrid or remote — I'll answer based on what I actually want, not what I think they want to hear. If they ask why I'm looking, I'll keep it honest and short: better problems, better team, room to grow. And if something isn't in my profile, I won't guess. I'd rather say I don't have that detail and follow up later. That's how I talk on real screens — casual, clear, no brochure language.`,
-  },
-  {
-    id: "style",
-    title: "Passage 3 — Your natural rhythm",
-    minutes: "~1 minute",
-    text: `One more for rhythm. Sometimes I trail off a little when I'm thinking. Sometimes I say “yeah,” “sure,” “that's fair.” I don't stack those on purpose — they just show up when I'm comfortable. I don't talk like a TED talk. I don't talk like an essay either. On the phone I keep answers tight, then stop and wait. If the other person jumps in, I let them. If they ask a technical or deep behavioral question, I'd rather schedule the real interview than fake my way through it on a screen. Quiet room helps. Natural volume helps. I'm not whispering, and I'm not projecting to a stage. Just me, mid-conversation, the way friends or recruiters actually hear me. Cherry should catch that: the pitch, the pace, the little vibrations when I emphasize a word, the way I breathe between thoughts. Read this like you're explaining something to a person you respect — not like you're competing in an English reading contest.`,
-  },
-];
+type Step = 1 | 2 | 3 | 4;
 
-const emptySlots = (): Record<SlotId, SlotState> => ({
-  about: { blob: null, url: null, durationSec: 0 },
-  screen: { blob: null, url: null, durationSec: 0 },
-  style: { blob: null, url: null, durationSec: 0 },
-});
+function emptySlots(): Record<SlotId, SlotState> {
+  return ALL_REQUIRED_SLOTS.reduce(
+    (acc, id) => {
+      acc[id] = { blob: null, url: null, durationSec: 0 };
+      return acc;
+    },
+    {} as Record<SlotId, SlotState>,
+  );
+}
 
 export default function VoicePage() {
   const [gender, setGender] = useState("female");
   const [consent, setConsent] = useState(false);
   const [slots, setSlots] = useState(emptySlots);
+  const [step, setStep] = useState<Step>(1);
   const [activeId, setActiveId] = useState<SlotId | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -53,6 +42,11 @@ export default function VoicePage() {
   const [ok, setOk] = useState<boolean | null>(null);
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [playingId, setPlayingId] = useState<SlotId | null>(null);
+  const [recruiterIndex, setRecruiterIndex] = useState(0);
+  const openPrompt = useMemo(
+    () => OPEN_PROMPTS[Math.floor(Math.random() * OPEN_PROMPTS.length)],
+    [],
+  );
 
   const recorder = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -83,7 +77,7 @@ export default function VoicePage() {
     if (busy) return;
     if (activeId && activeId !== id) {
       setOk(false);
-      setStatus("Stop the current recording before starting another passage.");
+      setStatus("Stop the current recording before starting another.");
       return;
     }
     if (playingId) stopPlayback();
@@ -109,16 +103,12 @@ export default function VoicePage() {
           if (prev.url) URL.revokeObjectURL(prev.url);
           return {
             ...current,
-            [id]: {
-              blob,
-              url: URL.createObjectURL(blob),
-              durationSec,
-            },
+            [id]: { blob, url: URL.createObjectURL(blob), durationSec },
           };
         });
         stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
-        setStatus(`Passage saved (${formatTime(durationSec)}). Rehear it, or record the next one.`);
+        setStatus(`Saved (${formatTime(durationSec)}). Rehear it, or continue.`);
         setOk(null);
       };
       recorder.current = media;
@@ -131,7 +121,7 @@ export default function VoicePage() {
       media.start(250);
       setActiveId(id);
       setOk(null);
-      setStatus("Recording… talk casually. Aim for about a minute.");
+      setStatus("Recording… speak naturally, at phone-call volume.");
     } catch {
       setOk(false);
       setStatus("Microphone permission denied. Allow mic access and try again.");
@@ -194,28 +184,29 @@ export default function VoicePage() {
       setStatus("Consent is required before Cherry can learn your voice.");
       return;
     }
-    const ready = SCRIPTS.filter((script) => slots[script.id].blob);
-    if (ready.length < 3) {
+    const missing = ALL_REQUIRED_SLOTS.filter((id) => !slots[id].blob);
+    if (missing.length) {
       setOk(false);
-      setStatus(`Record all 3 passages first. You have ${ready.length} of 3.`);
+      setStatus(`Finish all 4 tasks first. ${missing.length} recording${missing.length === 1 ? "" : "s"} still missing.`);
       return;
     }
 
     setBusy(true);
     setOk(null);
-    setStatus("Training Cherry on your tone, pace, and speaking style…");
+    setStatus("Building your professional identity clone — voice, speech, and recruiter style…");
     try {
       const body = new FormData();
       body.set("consent", "true");
       body.set("gender", gender);
-      for (const script of SCRIPTS) {
-        const slot = slots[script.id];
+      body.set("openPrompt", openPrompt.prompt);
+      for (const id of ALL_REQUIRED_SLOTS) {
+        const slot = slots[id];
         if (!slot.blob) continue;
-        const file = new File([slot.blob], `${script.id}-${Date.now()}.webm`, {
+        const file = new File([slot.blob], `${id}-${Date.now()}.webm`, {
           type: slot.blob.type || "audio/webm",
         });
         body.append("samples", file);
-        body.append("labels", script.id);
+        body.append("labels", id);
         body.append("durations", String(slot.durationSec));
       }
       const response = await fetch("/api/voice", { method: "POST", body });
@@ -229,10 +220,10 @@ export default function VoicePage() {
         );
         return;
       }
-      setProfile(data.conversation || null);
+      setProfile((data.identityProfile || data.conversation || null) as Record<string, unknown> | null);
       setOk(true);
       setStatus(
-        "Training complete. Cherry learned your voice from all 3 passages. Open Cherry to Listen to your intro.",
+        "Training complete. Cherry learned your voice and how you answer on screens. Open Cherry to Listen.",
       );
     } catch {
       setOk(false);
@@ -242,32 +233,39 @@ export default function VoicePage() {
     }
   }
 
-  const completed = SCRIPTS.filter((script) => slots[script.id].blob).length;
+  const completed = ALL_REQUIRED_SLOTS.filter((id) => slots[id].blob).length;
+  const total = ALL_REQUIRED_SLOTS.length;
+  const recruiterQ = RECRUITER_QUESTIONS[recruiterIndex];
+  const recruiterDone = RECRUITER_QUESTIONS.every((q) => slots[q.id].blob);
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-serif text-5xl">Voice studio</h1>
       <p className="mt-3 text-mute">
-        Record three casual passages so Cherry can learn your tone, pace, and natural rhythm — not a polished reading voice.
+        Build a professional identity clone — not just a voice clone. Four tasks, about 11–14 minutes once.
       </p>
 
       <div className="mt-5 rounded-2xl border border-cherry/30 bg-[#F8EDEA] px-4 py-3 text-sm text-ink">
         <p className="font-medium text-cherry">Record in a quiet place</p>
         <p className="mt-1 text-mute">
-          Background noise (TV, fans, traffic, other people talking) can confuse Cherry&apos;s voice training. Use a quiet
-          room, close windows if needed, and speak at a normal phone volume.
+          Background noise confuses training. Quiet room, normal phone volume, natural pauses.
         </p>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-line bg-white p-4 text-sm text-mute">
-        <p className="font-medium text-ink">How to record</p>
-        <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Find a quiet place first — loud background noise can disrupt Cherry&apos;s training.</li>
-          <li>Read each passage in a casual phone-call voice.</li>
-          <li>Do not perform. Do not rush. Do not sound like an English paragraph contest.</li>
-          <li>Normal volume and natural pauses are perfect.</li>
-          <li>Each passage should take about one minute when you speak normally.</li>
-        </ul>
+      <div className="mt-6 flex flex-wrap gap-2">
+        {([1, 2, 3, 4] as Step[]).map((n) => (
+          <button
+            key={n}
+            type="button"
+            disabled={Boolean(activeId) || busy}
+            onClick={() => setStep(n)}
+            className={`rounded-full px-4 py-2 text-sm ${
+              step === n ? "bg-ink text-paper" : "border border-ink disabled:opacity-40"
+            }`}
+          >
+            Task {n}
+          </button>
+        ))}
       </div>
 
       <div className="mt-6 grid gap-3 text-sm">
@@ -290,95 +288,204 @@ export default function VoicePage() {
         </label>
       </div>
 
-      <div className="mt-8 grid gap-6">
-        {SCRIPTS.map((script, index) => {
-          const slot = slots[script.id];
-          const isRecording = activeId === script.id;
-          const isPlaying = playingId === script.id;
-          return (
-            <section key={script.id} className="rounded-3xl border border-line bg-white p-5 shadow-card">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-serif text-2xl">{script.title}</h2>
-                <span className="text-xs uppercase tracking-wide text-mute">
-                  {script.minutes} · Passage {index + 1}/3
-                </span>
-              </div>
-              <p className="mt-4 font-serif text-lg leading-relaxed text-ink">{script.text}</p>
-              <p className="mt-4 rounded-xl bg-sand/70 px-3 py-2 text-sm text-mute">
-                Note: Read this casually, like you&apos;re on a real recruiter call with someone you respect. Natural
-                flow, natural vibrations, your normal pauses. Do not polish it into a contest reading.
-              </p>
+      {step === 1 ? (
+        <TaskCard
+          title={READING_PASSAGE.title}
+          purpose={READING_PASSAGE.purpose}
+          minutes={READING_PASSAGE.minutes}
+          guidance={READING_PASSAGE.guidance}
+        >
+          <p className="mt-4 font-serif text-lg leading-relaxed text-ink">{READING_PASSAGE.text}</p>
+          <RecordControls
+            id="reading"
+            slot={slots.reading}
+            activeId={activeId}
+            playingId={playingId}
+            busy={busy}
+            elapsed={elapsed}
+            onStart={() => void startRecording("reading")}
+            onStop={stopRecording}
+            onRehear={() => rehear("reading")}
+            onStopPlayback={stopPlayback}
+            onClear={() => clearSlot("reading")}
+          />
+          <StepNav
+            canNext={Boolean(slots.reading.blob)}
+            onNext={() => setStep(2)}
+            disabled={Boolean(activeId) || busy}
+          />
+        </TaskCard>
+      ) : null}
 
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                {!isRecording ? (
-                  <button
-                    type="button"
-                    disabled={busy || (activeId !== null && activeId !== script.id)}
-                    onClick={() => void startRecording(script.id)}
-                    className="rounded-full bg-ink px-5 py-2.5 text-paper disabled:opacity-50"
-                  >
-                    {slot.blob ? "Re-record" : "Start recording"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={stopRecording}
-                    className="rounded-full bg-cherry px-5 py-2.5 text-white"
-                  >
-                    Stop recording · {formatTime(elapsed)}
-                  </button>
-                )}
+      {step === 2 ? (
+        <TaskCard
+          title={PROFESSIONAL_PASSAGE.title}
+          purpose={PROFESSIONAL_PASSAGE.purpose}
+          minutes={PROFESSIONAL_PASSAGE.minutes}
+          guidance={PROFESSIONAL_PASSAGE.guidance}
+        >
+          <p className="mt-4 font-serif text-lg leading-relaxed text-ink">{PROFESSIONAL_PASSAGE.text}</p>
+          <RecordControls
+            id="professional"
+            slot={slots.professional}
+            activeId={activeId}
+            playingId={playingId}
+            busy={busy}
+            elapsed={elapsed}
+            onStart={() => void startRecording("professional")}
+            onStop={stopRecording}
+            onRehear={() => rehear("professional")}
+            onStopPlayback={stopPlayback}
+            onClear={() => clearSlot("professional")}
+          />
+          <StepNav
+            canBack
+            canNext={Boolean(slots.professional.blob)}
+            onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
+            disabled={Boolean(activeId) || busy}
+          />
+        </TaskCard>
+      ) : null}
 
-                <button
-                  type="button"
-                  disabled={!slot.url || busy || Boolean(activeId)}
-                  onClick={() => (isPlaying ? stopPlayback() : rehear(script.id))}
-                  className="rounded-full border border-ink px-5 py-2.5 disabled:opacity-40"
-                >
-                  {isPlaying ? "Stop rehear" : "Rehear"}
-                </button>
+      {step === 3 ? (
+        <TaskCard
+          title={OPEN_TASK.title}
+          purpose={OPEN_TASK.purpose}
+          minutes={OPEN_TASK.minutes}
+          guidance={OPEN_TASK.guidance}
+        >
+          <p className="mt-4 rounded-2xl bg-sand/70 px-4 py-3 text-lg leading-relaxed text-ink">
+            {openPrompt.prompt}
+          </p>
+          <p className="mt-3 text-sm text-mute">
+            Talk for a few minutes. Content does not matter — fillers, pauses, and rhythm do.
+          </p>
+          <RecordControls
+            id="open"
+            slot={slots.open}
+            activeId={activeId}
+            playingId={playingId}
+            busy={busy}
+            elapsed={elapsed}
+            onStart={() => void startRecording("open")}
+            onStop={stopRecording}
+            onRehear={() => rehear("open")}
+            onStopPlayback={stopPlayback}
+            onClear={() => clearSlot("open")}
+          />
+          <StepNav
+            canBack
+            canNext={Boolean(slots.open.blob)}
+            onBack={() => setStep(2)}
+            onNext={() => setStep(4)}
+            disabled={Boolean(activeId) || busy}
+          />
+        </TaskCard>
+      ) : null}
 
-                {slot.blob ? (
-                  <button
-                    type="button"
-                    disabled={busy || Boolean(activeId)}
-                    onClick={() => clearSlot(script.id)}
-                    className="rounded-full px-4 py-2.5 text-sm text-mute hover:text-ink disabled:opacity-40"
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
+      {step === 4 ? (
+        <TaskCard
+          title={RECRUITER_TASK.title}
+          purpose={RECRUITER_TASK.purpose}
+          minutes={RECRUITER_TASK.minutes}
+          guidance={RECRUITER_TASK.guidance}
+        >
+          <div className="mt-4 flex flex-wrap gap-2">
+            {RECRUITER_QUESTIONS.map((q, index) => (
+              <button
+                key={q.id}
+                type="button"
+                disabled={Boolean(activeId) || busy}
+                onClick={() => setRecruiterIndex(index)}
+                className={`rounded-full px-3 py-1.5 text-xs ${
+                  recruiterIndex === index
+                    ? "bg-ink text-paper"
+                    : slots[q.id].blob
+                      ? "border border-moss text-moss"
+                      : "border border-line text-mute"
+                }`}
+              >
+                Q{index + 1}
+                {slots[q.id].blob ? " ✓" : ""}
+              </button>
+            ))}
+          </div>
 
-              <p className="mt-3 text-sm text-mute">
-                {isRecording
-                  ? "Recording in progress…"
-                  : slot.blob
-                    ? `Saved · ${formatTime(slot.durationSec)} · ready for training`
-                    : "Not recorded yet"}
-              </p>
-            </section>
-          );
-        })}
-      </div>
+          <p className="mt-5 text-xs uppercase tracking-wide text-mute">
+            Question {recruiterIndex + 1} of {RECRUITER_QUESTIONS.length}
+          </p>
+          <p className="mt-2 font-serif text-2xl text-ink">{recruiterQ.question}</p>
+          <p className="mt-2 text-sm text-mute">Answer out loud like a real screen. Then stop and move to the next.</p>
+
+          <RecordControls
+            id={recruiterQ.id}
+            slot={slots[recruiterQ.id]}
+            activeId={activeId}
+            playingId={playingId}
+            busy={busy}
+            elapsed={elapsed}
+            onStart={() => void startRecording(recruiterQ.id)}
+            onStop={stopRecording}
+            onRehear={() => rehear(recruiterQ.id)}
+            onStopPlayback={stopPlayback}
+            onClear={() => clearSlot(recruiterQ.id)}
+          />
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={Boolean(activeId) || busy || recruiterIndex === 0}
+              onClick={() => setRecruiterIndex((i) => Math.max(0, i - 1))}
+              className="rounded-full border border-ink px-4 py-2 text-sm disabled:opacity-40"
+            >
+              Previous question
+            </button>
+            {recruiterIndex < RECRUITER_QUESTIONS.length - 1 ? (
+              <button
+                type="button"
+                disabled={Boolean(activeId) || busy || !slots[recruiterQ.id].blob}
+                onClick={() => setRecruiterIndex((i) => Math.min(RECRUITER_QUESTIONS.length - 1, i + 1))}
+                className="rounded-full bg-ink px-4 py-2 text-sm text-paper disabled:opacity-40"
+              >
+                Next question
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={Boolean(activeId) || busy}
+              onClick={() => setStep(3)}
+              className="rounded-full px-4 py-2 text-sm text-mute hover:text-ink"
+            >
+              Back to Task 3
+            </button>
+          </div>
+
+          {!recruiterDone ? (
+            <p className="mt-4 text-sm text-mute">
+              Answer all {RECRUITER_QUESTIONS.length} questions to unlock training.
+            </p>
+          ) : null}
+        </TaskCard>
+      ) : null}
 
       <div className="mt-8 rounded-2xl bg-white p-5 shadow-card">
         <p className="text-sm text-mute">
-          {completed} of 3 passages recorded
+          {completed} of {total} recordings · ~11–14 minutes total
         </p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-sand">
           <div
             className="h-full rounded-full bg-moss transition-all duration-300"
-            style={{ width: `${(completed / 3) * 100}%` }}
+            style={{ width: `${(completed / total) * 100}%` }}
           />
         </div>
         <button
           type="button"
-          disabled={busy || Boolean(activeId) || completed < 3 || !consent}
+          disabled={busy || Boolean(activeId) || completed < total || !consent}
           onClick={() => void save()}
           className="mt-5 w-full rounded-full bg-cherry py-3 text-white disabled:opacity-50"
         >
-          {busy ? "Training Cherry…" : "Train Cherry on my voice"}
+          {busy ? "Training Cherry…" : "Train professional identity clone"}
         </button>
         {status ? (
           <p className={`mt-3 text-sm ${ok === false ? "text-cherry" : ok ? "text-moss" : "text-mute"}`}>{status}</p>
@@ -393,34 +500,195 @@ export default function VoicePage() {
         ) : null}
       </div>
 
-      {profile ? (
-        <div className="mt-6 min-w-0 rounded-2xl bg-white p-5 shadow-card">
-          <h2 className="font-serif text-2xl">Speaking style learned</h2>
-          <dl className="mt-3 grid gap-2 text-sm text-mute">
-            {profile.formality ? (
-              <div>
-                Tone: <span className="capitalize text-ink">{String(profile.formality)}</span>
-              </div>
-            ) : null}
-            {profile.answerLength ? (
-              <div>
-                Answer length:{" "}
-                <span className="capitalize text-ink">{String(profile.answerLength)}</span>
-              </div>
-            ) : null}
-          </dl>
-          {typeof profile.notes === "string" && profile.notes ? (
-            <p className="mt-3 text-sm leading-relaxed text-ink">{profile.notes}</p>
-          ) : null}
-          {Array.isArray(profile.typicalPhrases) && profile.typicalPhrases.length ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {profile.typicalPhrases.map((phrase) => (
-                <span key={String(phrase)} className="rounded-full bg-sand px-3 py-1 text-sm text-ink">
-                  {String(phrase)}
-                </span>
-              ))}
-            </div>
-          ) : null}
+      {profile ? <IdentitySummary profile={profile} /> : null}
+    </div>
+  );
+}
+
+function TaskCard({
+  title,
+  purpose,
+  minutes,
+  guidance,
+  children,
+}: {
+  title: string;
+  purpose: string;
+  minutes: string;
+  guidance: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="mt-8 rounded-3xl border border-line bg-white p-5 shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-serif text-2xl">{title}</h2>
+        <span className="text-xs uppercase tracking-wide text-mute">{minutes}</span>
+      </div>
+      <p className="mt-2 text-sm text-mute">{purpose}</p>
+      <p className="mt-4 rounded-xl bg-sand/70 px-3 py-2 text-sm text-mute">{guidance}</p>
+      {children}
+    </section>
+  );
+}
+
+function RecordControls({
+  id,
+  slot,
+  activeId,
+  playingId,
+  busy,
+  elapsed,
+  onStart,
+  onStop,
+  onRehear,
+  onStopPlayback,
+  onClear,
+}: {
+  id: SlotId;
+  slot: SlotState;
+  activeId: SlotId | null;
+  playingId: SlotId | null;
+  busy: boolean;
+  elapsed: number;
+  onStart: () => void;
+  onStop: () => void;
+  onRehear: () => void;
+  onStopPlayback: () => void;
+  onClear: () => void;
+}) {
+  const isRecording = activeId === id;
+  const isPlaying = playingId === id;
+  return (
+    <>
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        {!isRecording ? (
+          <button
+            type="button"
+            disabled={busy || (activeId !== null && activeId !== id)}
+            onClick={onStart}
+            className="rounded-full bg-ink px-5 py-2.5 text-paper disabled:opacity-50"
+          >
+            {slot.blob ? "Re-record" : "Start recording"}
+          </button>
+        ) : (
+          <button type="button" onClick={onStop} className="rounded-full bg-cherry px-5 py-2.5 text-white">
+            Stop recording · {formatTime(elapsed)}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!slot.url || busy || Boolean(activeId)}
+          onClick={() => (isPlaying ? onStopPlayback() : onRehear())}
+          className="rounded-full border border-ink px-5 py-2.5 disabled:opacity-40"
+        >
+          {isPlaying ? "Stop rehear" : "Rehear"}
+        </button>
+        {slot.blob ? (
+          <button
+            type="button"
+            disabled={busy || Boolean(activeId)}
+            onClick={onClear}
+            className="rounded-full px-4 py-2.5 text-sm text-mute hover:text-ink disabled:opacity-40"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+      <p className="mt-3 text-sm text-mute">
+        {isRecording
+          ? "Recording in progress…"
+          : slot.blob
+            ? `Saved · ${formatTime(slot.durationSec)}`
+            : "Not recorded yet"}
+      </p>
+    </>
+  );
+}
+
+function StepNav({
+  canBack,
+  canNext,
+  onBack,
+  onNext,
+  disabled,
+}: {
+  canBack?: boolean;
+  canNext?: boolean;
+  onBack?: () => void;
+  onNext?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="mt-5 flex flex-wrap gap-3">
+      {canBack && onBack ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onBack}
+          className="rounded-full border border-ink px-4 py-2 text-sm disabled:opacity-40"
+        >
+          Back
+        </button>
+      ) : null}
+      {onNext ? (
+        <button
+          type="button"
+          disabled={disabled || !canNext}
+          onClick={onNext}
+          className="rounded-full bg-ink px-4 py-2 text-sm text-paper disabled:opacity-40"
+        >
+          Continue
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function IdentitySummary({ profile }: { profile: Record<string, unknown> }) {
+  const conversation =
+    (profile.conversation_profile as Record<string, unknown> | undefined) || profile;
+  const recruiter = profile.recruiter_answer_profile as Record<string, unknown> | undefined;
+  const speech = profile.speech_profile as Record<string, unknown> | undefined;
+
+  return (
+    <div className="mt-6 min-w-0 rounded-2xl bg-white p-5 shadow-card">
+      <h2 className="font-serif text-2xl">Identity profiles learned</h2>
+      <dl className="mt-3 grid gap-2 text-sm text-mute">
+        {conversation.formality ? (
+          <div>
+            Tone: <span className="capitalize text-ink">{String(conversation.formality)}</span>
+          </div>
+        ) : null}
+        {conversation.answerLength || recruiter?.typical_answer_length ? (
+          <div>
+            Answer length:{" "}
+            <span className="capitalize text-ink">
+              {String(recruiter?.typical_answer_length || conversation.answerLength)}
+            </span>
+          </div>
+        ) : null}
+        {speech?.pace ? (
+          <div>
+            Pace: <span className="capitalize text-ink">{String(speech.pace)}</span>
+          </div>
+        ) : null}
+        {recruiter?.confidence ? (
+          <div>
+            Screen confidence:{" "}
+            <span className="capitalize text-ink">{String(recruiter.confidence)}</span>
+          </div>
+        ) : null}
+      </dl>
+      {typeof conversation.notes === "string" && conversation.notes ? (
+        <p className="mt-3 text-sm leading-relaxed text-ink">{conversation.notes}</p>
+      ) : null}
+      {Array.isArray(conversation.typicalPhrases) && conversation.typicalPhrases.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {conversation.typicalPhrases.map((phrase) => (
+            <span key={String(phrase)} className="rounded-full bg-sand px-3 py-1 text-sm text-ink">
+              {String(phrase)}
+            </span>
+          ))}
         </div>
       ) : null}
     </div>

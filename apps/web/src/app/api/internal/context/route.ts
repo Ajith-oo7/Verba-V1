@@ -32,8 +32,12 @@ export async function GET(req: NextRequest) {
 
   const voiceTranscripts = user.voiceSamples
     .filter((sample) => sample.transcript?.trim())
-    .slice(0, 3)
-    .map((sample) => sample.transcript.trim());
+    .slice(0, 8)
+    .map((sample) => {
+      const base = sample.path.split(/[/\\]/).pop() || "";
+      const label = base.split("-")[0] || "sample";
+      return `[${label}] ${sample.transcript.trim()}`;
+    });
 
   return NextResponse.json({
     userId: user.id,

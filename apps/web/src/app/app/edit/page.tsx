@@ -117,7 +117,7 @@ function CherryInner() {
       if (seen.has(key)) continue;
       seen.add(key);
       picked.push(sample);
-      if (picked.length >= 3) break;
+      if (picked.length >= 8) break;
     }
     return picked;
   }, [info]);
@@ -209,7 +209,7 @@ function CherryInner() {
                 </div>
               </dl>
             ) : (
-              <p className="mt-2 text-sm text-mute">No voice profile yet. Record 3 passages first.</p>
+              <p className="mt-2 text-sm text-mute">No voice profile yet. Complete Voice studio training first.</p>
             )}
 
             {style && (style.formality || style.notes || style.typicalPhrases?.length) ? (
@@ -293,9 +293,9 @@ function CherryInner() {
             Record the three casual passages again in a quiet place. New training replaces the active voice profile.
           </p>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-mute">
-            <li>Open Voice studio and record all 3 passages casually.</li>
-            <li>Rehear each clip before training.</li>
-            <li>Click Train Cherry, then come back here and Listen to Cherry.</li>
+            <li>Open Voice studio and complete all 4 tasks (~11–14 minutes).</li>
+            <li>Rehear clips before training.</li>
+            <li>Click Train professional identity clone, then Listen to Cherry.</li>
           </ol>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/app/voice" className="rounded-full bg-cherry px-5 py-3 text-white">

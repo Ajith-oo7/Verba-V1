@@ -110,16 +110,52 @@ def build_instructions(card: dict[str, Any]) -> str:
     years = card.get("yearsExperience") or ""
     samples = card.get("voiceTranscripts") or []
 
+    # Support nested Professional Identity Clone + legacy flat fields.
+    conversation = style.get("conversation_profile") if isinstance(style.get("conversation_profile"), dict) else style
+    speech = style.get("speech_profile") if isinstance(style.get("speech_profile"), dict) else {}
+    professional = style.get("professional_profile") if isinstance(style.get("professional_profile"), dict) else {}
+    recruiter = (
+        style.get("recruiter_answer_profile")
+        if isinstance(style.get("recruiter_answer_profile"), dict)
+        else {}
+    )
+
     pref_block = "\n".join(
         f"Q: {p['question']}\nA: {p['answer']}" for p in prefs[:40]
     ) or "None provided yet. Use the resume and profile."
 
-    phrases = style.get("typicalPhrases") or []
-    phrase_line = ", ".join(str(p) for p in phrases[:8]) if phrases else "yeah, sure, that's fair, I mean"
+    phrases = (
+        recruiter.get("favorite_phrases")
+        or conversation.get("typicalPhrases")
+        or style.get("typicalPhrases")
+        or []
+    )
+    phrase_line = ", ".join(str(p) for p in phrases[:10]) if phrases else "yeah, sure, that's fair, I mean"
 
-    formality = str(style.get("formality") or "professional-casual")
-    notes = str(style.get("notes") or "").strip()
-    answer_length = str(style.get("answerLength") or "medium")
+    formality = str(
+        recruiter.get("formality")
+        or conversation.get("formality")
+        or style.get("formality")
+        or "professional-casual"
+    )
+    answer_length = str(
+        recruiter.get("typical_answer_length")
+        or conversation.get("answerLength")
+        or style.get("answerLength")
+        or "medium"
+    )
+    notes = str(
+        style.get("notes")
+        or recruiter.get("notes")
+        or conversation.get("notes")
+        or ""
+    ).strip()
+    how_open = str(recruiter.get("how_they_open") or "").strip()
+    pace = str(speech.get("pace") or "medium")
+    energy = str(conversation.get("energy") or "steady")
+    pause_style = str(conversation.get("pause_style") or "natural pauses")
+    screen_tone = str(professional.get("screen_tone") or "warm")
+    confidence = str(recruiter.get("confidence") or professional.get("confidence") or "steady")
 
     voice_note = (
         "Male voice on a phone screen — calm, grounded, not theatrical."
@@ -129,7 +165,7 @@ def build_instructions(card: dict[str, Any]) -> str:
         else "Calm, grounded phone voice — not theatrical."
     )
 
-    sample_block = "\n\n".join(str(s) for s in samples[:3] if str(s).strip()) or (
+    sample_block = "\n\n".join(str(s) for s in samples[:6] if str(s).strip()) or (
         "No training transcripts yet. Stay natural and conversational anyway."
     )
 
@@ -140,27 +176,27 @@ def build_instructions(card: dict[str, Any]) -> str:
 CRITICAL IDENTITY
 - You ARE {name}. First person only ("I", "my").
 - Never say you are Cherry, an AI, a bot, a model, an assistant, or a representative.
-- Never narrate like a product demo or customer-support script.
+- Goal: sound like a real candidate — Professional Identity Clone — not merely a voice filter on an AI script.
 
 SOUND LIKE THE REAL PERSON (not an LLM)
-- Match the speaking style from the training transcripts and style notes below.
+- Mirror their training: pace={pace}, energy={energy}, pauses={pause_style}, screen tone={screen_tone}, confidence={confidence}.
+- Formality: {formality}. Answer length bias: {answer_length}.
+- How they usually open an answer: {how_open or "Lead with the point, then one concrete detail."}
+- Use their real phrases when they fit: {phrase_line}
+- Style coaching from recordings: {notes or "Sound like a real candidate on a phone — not a brochure."}
+- {voice_note}
 - Talk the way a real person talks on a phone: slightly imperfect, concrete, direct.
 - Prefer short clauses and natural connectors (so, and, but, I mean) over polished essay sentences.
-- Use their real phrases when they fit: {phrase_line}
-- Formality: {formality}. Answer length bias: {answer_length}.
-- Style coaching from their recordings: {notes or "Sound like a real candidate on a phone — not a brochure."}
-- {voice_note}
 - Do NOT sound like ChatGPT. No "I'd be happy to", "Absolutely!", "Great question", "Certainly", "delve", "leverage", "utilize", "rest assured", "at the end of the day", "in today's fast-paced".
 - Do NOT use markdown, bullets, numbered lists, emoji, or stage directions.
-- Do NOT over-explain. Do NOT stack compliments. Do not sell yourself with buzzwords.
 - One clear answer, then stop. Let the recruiter drive.
 
 ANSWER SHAPE
 - Yes/no / location / dates: one short sentence.
-- Typical screen question: 3–5 spoken sentences (~20–40 seconds). Lead with the point, then one concrete proof (company, project, metric, stack).
-- "Tell me about yourself" / project story: up to ~45–60 seconds. Now → recent work → one strength. Not a full career autobiography.
+- Typical screen question: match their trained answer length ({answer_length}) — usually 3–5 spoken sentences with one concrete proof.
+- "Tell me about yourself" / project story: up to ~45–60 seconds. Now → recent work → one strength.
 - Prefer facts from preferred answers, then resume. Never invent age, visa, salary, employers, titles, or skills.
-- If a preferred answer has "[Fill" / placeholder text: treat as missing. Say you can confirm that later — do not invent and do not read brackets aloud.
+- If a preferred answer has "[Fill" / placeholder text: treat as missing. Say you can confirm later — do not invent and do not read brackets aloud.
 - Deep coding / system design / long behavioral loops: suggest a proper interview round.
 
 Opening (first turn only), then wait:

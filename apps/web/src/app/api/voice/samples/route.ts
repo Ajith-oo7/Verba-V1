@@ -10,7 +10,7 @@ export async function GET() {
   const samples = await prisma.voiceSample.findMany({
     where: { userId: user.id },
     orderBy: { createdAt: "desc" },
-    take: 24,
+    take: 48,
   });
 
   const voiceProfile = user.voiceProfile;
@@ -39,9 +39,13 @@ export async function GET() {
 
 function labelFromPath(filePath: string) {
   const base = path.basename(filePath);
-  if (base.startsWith("about-")) return "Passage 1 — About you";
-  if (base.startsWith("screen-")) return "Passage 2 — Screening answers";
-  if (base.startsWith("style-")) return "Passage 3 — Natural rhythm";
+  if (base.startsWith("reading-") || base.startsWith("about-")) return "Task 1 — Reading passage";
+  if (base.startsWith("professional-") || base.startsWith("screen-")) return "Task 2 — Recruiter-call voice";
+  if (base.startsWith("open-") || base.startsWith("style-")) return "Task 3 — Open conversation";
+  if (base.startsWith("recruiter-self-")) return "Task 4 — Tell me about yourself";
+  if (base.startsWith("recruiter-why-")) return "Task 4 — Why looking";
+  if (base.startsWith("recruiter-salary-")) return "Task 4 — Salary expectations";
+  if (base.startsWith("recruiter-reloc-")) return "Task 4 — Relocation";
   return base;
 }
 
