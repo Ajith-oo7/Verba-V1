@@ -19,7 +19,7 @@ export default async function DashboardPage() {
       </p>
       <div className="mt-10 grid gap-4">
         <Step done={ready} href="/app/onboarding" title="1. Professional profile" copy="Resume, authorization, salary, start date." />
-        <Step done={voiced} href="/app/voice" title="2. Voice studio" copy="Four tasks (~11–14 min): reading, professional screen voice, open talk, recruiter Q&A." />
+        <Step done={voiced} href="/app/voice" title="2. Voice studio" copy="Tasks 1–3 required (~9–11 min). Task 4 recruiter Q&A is optional." />
         <Step done={(user.preferences?.length || 0) > 0} href="/app/answers" title="3. Preferred answers" copy="Full phone-screen questionnaire — age, auth, salary, projects, in your words." />
         <Step done={active} href="/app/activate" title="4. Activate Cherry" copy="Phone number is a placeholder. Browser tests are live." />
       </div>

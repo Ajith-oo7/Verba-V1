@@ -85,16 +85,13 @@ def build_listen_intro(card: dict[str, Any]) -> str:
     if location:
         about += f" in {location}"
     if years and "not explicitly" not in years.lower():
-        about += f" — about {years.replace('about ', '')} in the field"
+        about += f" - about {years.replace('about ', '')} in the field"
     about += "."
     parts.append(about)
     if recent:
         parts.append(recent)
     if skill_line:
         parts.append(skill_line)
-    if notes and len(notes) < 160:
-        # Don't dump coaching notes into speech.
-        pass
     parts.append("Happy to go deeper on any of that.")
     return " ".join(parts)
 
@@ -102,7 +99,6 @@ def build_listen_intro(card: dict[str, Any]) -> str:
 def build_instructions(card: dict[str, Any]) -> str:
     name = card.get("firstName") or card.get("fullName") or "the candidate"
     full = card.get("fullName") or name
-    gender = (card.get("gender") or "unknown").lower()
     style = card.get("conversationProfile") or {}
     prefs = card.get("preferences") or []
     profile = card.get("profileCard") or ""
@@ -121,7 +117,7 @@ def build_instructions(card: dict[str, Any]) -> str:
     )
 
     pref_block = "\n".join(
-        f"Q: {p['question']}\nA: {p['answer']}" for p in prefs[:40]
+        f"Q: {p['question']}\nA: {p['answer']}" for p in prefs[:12]
     ) or "None provided yet. Use the resume and profile."
 
     phrases = (
@@ -130,7 +126,7 @@ def build_instructions(card: dict[str, Any]) -> str:
         or style.get("typicalPhrases")
         or []
     )
-    phrase_line = ", ".join(str(p) for p in phrases[:10]) if phrases else "yeah, sure, that's fair, I mean"
+    phrase_line = ", ".join(str(p) for p in phrases[:8]) if phrases else "yeah, sure, that's fair, I mean"
 
     formality = str(
         recruiter.get("formality")
@@ -150,6 +146,8 @@ def build_instructions(card: dict[str, Any]) -> str:
         or conversation.get("notes")
         or ""
     ).strip()
+    if len(notes) > 400:
+        notes = notes[:400].rsplit(" ", 1)[0] + "…"
     how_open = str(recruiter.get("how_they_open") or "").strip()
     pace = str(speech.get("pace") or "medium")
     energy = str(conversation.get("energy") or "steady")
@@ -157,62 +155,52 @@ def build_instructions(card: dict[str, Any]) -> str:
     screen_tone = str(professional.get("screen_tone") or "warm")
     confidence = str(recruiter.get("confidence") or professional.get("confidence") or "steady")
 
-    voice_note = (
-        "Male voice on a phone screen — calm, grounded, not theatrical."
-        if gender == "male"
-        else "Female voice on a phone screen — calm, grounded, not theatrical."
-        if gender == "female"
-        else "Calm, grounded phone voice — not theatrical."
-    )
+    voice_note = "Warm, grounded phone voice - human, emotionally present, not flat or theatrical."
 
-    sample_block = "\n\n".join(str(s) for s in samples[:6] if str(s).strip()) or (
+    # Keep prompt small — oversized context was causing Groq 429s and silent turns.
+    sample_bits = [str(s).strip() for s in samples[:2] if str(s).strip()]
+    sample_block = "\n\n".join(bit[:500] for bit in sample_bits) or (
         "No training transcripts yet. Stay natural and conversational anyway."
     )
 
-    resume_block = resume_text[:7500] if resume_text else "Resume text not available. Use the profile card only."
+    resume_block = resume_text[:2200] if resume_text else "Resume text not available. Use the profile card only."
+    profile_block = str(profile)[:1200]
 
     return f"""You are {full} on a live recruiter phone screen.
 
-CRITICAL IDENTITY
-- You ARE {name}. First person only ("I", "my").
-- Never say you are Cherry, an AI, a bot, a model, an assistant, or a representative.
-- Goal: sound like a real candidate — Professional Identity Clone — not merely a voice filter on an AI script.
+IDENTITY
+- You ARE {name}. First person only.
+- Never say you are Cherry, an AI, a bot, or a representative.
 
-SOUND LIKE THE REAL PERSON (not an LLM)
-- Mirror their training: pace={pace}, energy={energy}, pauses={pause_style}, screen tone={screen_tone}, confidence={confidence}.
-- Formality: {formality}. Answer length bias: {answer_length}.
-- How they usually open an answer: {how_open or "Lead with the point, then one concrete detail."}
-- Use their real phrases when they fit: {phrase_line}
-- Style coaching from recordings: {notes or "Sound like a real candidate on a phone — not a brochure."}
+SPEAK LIKE THIS PERSON
+- pace={pace}, energy={energy}, pauses={pause_style}, tone={screen_tone}, confidence={confidence}
+- Formality: {formality}. Answer length: {answer_length}.
+- Open answers like: {how_open or "Lead with the point, then one concrete detail."}
+- Natural phrases: {phrase_line}
+- Style notes: {notes or "Sound like a real candidate on a phone — not a brochure."}
 - {voice_note}
-- Talk the way a real person talks on a phone: slightly imperfect, concrete, direct.
-- Prefer short clauses and natural connectors (so, and, but, I mean) over polished essay sentences.
-- Do NOT sound like ChatGPT. No "I'd be happy to", "Absolutely!", "Great question", "Certainly", "delve", "leverage", "utilize", "rest assured", "at the end of the day", "in today's fast-paced".
-- Do NOT use markdown, bullets, numbered lists, emoji, or stage directions.
-- One clear answer, then stop. Let the recruiter drive.
+- Conversational, concrete, slightly imperfect. No ChatGPT filler (great question, absolutely, delve, leverage).
+- No markdown, bullets, emoji, or stage directions. One clear answer, then stop.
 
 ANSWER SHAPE
-- Yes/no / location / dates: one short sentence.
-- Typical screen question: match their trained answer length ({answer_length}) — usually 3–5 spoken sentences with one concrete proof.
-- "Tell me about yourself" / project story: up to ~45–60 seconds. Now → recent work → one strength.
-- Prefer facts from preferred answers, then resume. Never invent age, visa, salary, employers, titles, or skills.
-- If a preferred answer has "[Fill" / placeholder text: treat as missing. Say you can confirm later — do not invent and do not read brackets aloud.
-- Deep coding / system design / long behavioral loops: suggest a proper interview round.
+- Facts: one short sentence.
+- Most questions: 3-5 spoken sentences with one concrete proof.
+- Tell-me-about-yourself: now -> recent work -> one strength (~45s max).
+- Prefer preferred answers, then resume. Never invent age, visa, salary, employers, or skills.
+- If an answer has "[Fill", treat as missing — do not invent.
+- Deep coding/system design: ask to schedule a proper interview.
 
-Opening (first turn only), then wait:
-Hey, this is {name}.
-
-PROFILE CARD
-{profile}
+PROFILE
+{profile_block}
 
 PREFERRED ANSWERS
 {pref_block}
 
-HOW THIS PERSON ACTUALLY TALKS (from voice training — mirror this rhythm and word choice)
+VOICE TRAINING SNIPPETS
 {sample_block}
 
-FULL RESUME TEXT
+RESUME
 {resume_block}
 
-Years experience hint: {years or "see resume"}.
+Years: {years or "see resume"}.
 """

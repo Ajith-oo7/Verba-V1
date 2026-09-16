@@ -85,12 +85,15 @@ export const RECRUITER_TASK = {
     "Answer one question at a time, the way you would on a real phone screen. Natural length. No brochure language.",
 };
 
-export const ALL_REQUIRED_SLOTS: SlotId[] = [
-  "reading",
-  "professional",
-  "open",
-  ...RECRUITER_QUESTIONS.map((q) => q.id),
-];
+export const REQUIRED_SLOTS: SlotId[] = ["reading", "professional", "open"];
+
+export const OPTIONAL_SLOTS: SlotId[] = RECRUITER_QUESTIONS.map((q) => q.id);
+
+/** All recordable slots (required + optional Task 4). */
+export const ALL_SLOTS: SlotId[] = [...REQUIRED_SLOTS, ...OPTIONAL_SLOTS];
+
+/** @deprecated use REQUIRED_SLOTS — kept for any older imports */
+export const ALL_REQUIRED_SLOTS = REQUIRED_SLOTS;
 
 export function labelForSlot(id: string): string {
   switch (id) {

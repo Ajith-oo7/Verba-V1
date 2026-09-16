@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
     firstName: firstNameOf(user.profile.fullName || user.name),
     gender: user.voiceProfile?.gender || "unknown",
     referencePath: user.voiceProfile?.referencePath || "",
+    elevenLabsVoiceId: user.voiceProfile?.elevenLabsVoiceId || "",
     conversationProfile: conversation,
     preferences: user.preferences.map((item) => ({ question: item.question, answer: item.answer })),
     profileCard: buildProfileCard(user.profile),
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
     skills,
     education,
     voiceTranscripts,
-    resumeText: (user.profile.resumeText || "").slice(0, 8000),
+    resumeText: (user.profile.resumeText || "").slice(0, 2500),
     salaryMin: user.profile.salaryMin,
     salaryMax: user.profile.salaryMax,
   });

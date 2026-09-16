@@ -40,7 +40,7 @@ export default async function Home() {
       <section className="mt-24 grid gap-6 md:grid-cols-3">
         {[
           ["Not a coach", "Cherry is not a teleprompter or a note-taker. She is on the call."],
-          ["Sounds like you", "Upload your voice. Cherry matches gender and the way you actually speak."],
+          ["Sounds like you", "Train Cherry on your voice. She clones how you actually speak."],
           ["Screens only", "Location, auth, salary, start date. If it becomes an interview, she stops."],
         ].map(([title, copy]) => (
           <div key={title} className="rounded-3xl border border-line bg-white p-6 shadow-card">

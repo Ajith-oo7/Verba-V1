@@ -43,6 +43,8 @@ type VoiceInfo = {
     consentAt: string | null;
     conversation: ConversationStyle;
     hasReference: boolean;
+    elevenLabsVoiceId?: string;
+    engine?: string;
   } | null;
   samples: Sample[];
 };
@@ -124,6 +126,7 @@ function CherryInner() {
 
   const style = info?.voiceProfile?.conversation;
   const cloneReady = Boolean(info?.voiceProfile?.cloneReady && info?.voiceProfile?.hasReference);
+  const elevenLabsReady = Boolean(info?.voiceProfile?.elevenLabsVoiceId);
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-2xl">
@@ -169,11 +172,13 @@ function CherryInner() {
               <div>
                 Voice source:{" "}
                 <span className="text-ink">
-                  {cloneReady
-                    ? "Trained clone (your recordings)"
-                    : info?.voiceProfile
-                      ? `Default TTS (${info.voiceProfile.ttsVoice || "Edge"})`
-                      : "Default TTS — train voice first for your clone"}
+                  {elevenLabsReady
+                    ? "ElevenLabs clone (your voice)"
+                    : cloneReady
+                      ? "Trained samples on file (clone pending)"
+                      : info?.voiceProfile
+                        ? `Default TTS (${info.voiceProfile.ttsVoice || "Edge"})`
+                        : "Default TTS — train voice first for your clone"}
                 </span>
               </div>
             </dl>
@@ -181,6 +186,10 @@ function CherryInner() {
               <p className="mt-3 rounded-2xl border border-line bg-sand/60 px-4 py-3 text-sm text-ink">
                 Clone is not active yet, so this preview uses the default voice. Train in Voice studio, then
                 listen again.
+              </p>
+            ) : !elevenLabsReady ? (
+              <p className="mt-3 rounded-2xl border border-line bg-sand/60 px-4 py-3 text-sm text-ink">
+                Samples are saved. The first Listen will create your ElevenLabs clone automatically.
               </p>
             ) : null}
           </div>
@@ -196,15 +205,22 @@ function CherryInner() {
             {info?.voiceProfile ? (
               <dl className="mt-3 grid gap-2 text-sm text-mute">
                 <div>
-                  Gender: <span className="text-ink">{info.voiceProfile.gender}</span>
+                  TTS voice: <span className="text-ink">{info.voiceProfile.ttsVoice}</span>
                 </div>
                 <div>
-                  TTS voice: <span className="text-ink">{info.voiceProfile.ttsVoice}</span>
+                  Engine:{" "}
+                  <span className="text-ink">
+                    {info.voiceProfile.elevenLabsVoiceId ? "ElevenLabs IVC" : info.voiceProfile.engine || "edge"}
+                  </span>
                 </div>
                 <div>
                   Status:{" "}
                   <span className="text-ink">
-                    {info.voiceProfile.cloneReady ? "Trained and ready" : "Needs training"}
+                    {info.voiceProfile.elevenLabsVoiceId
+                      ? "Cloned and ready"
+                      : info.voiceProfile.cloneReady
+                        ? "Trained — clone on first Listen"
+                        : "Needs training"}
                   </span>
                 </div>
               </dl>
@@ -293,9 +309,9 @@ function CherryInner() {
             Record the three casual passages again in a quiet place. New training replaces the active voice profile.
           </p>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-mute">
-            <li>Open Voice studio and complete all 4 tasks (~11–14 minutes).</li>
+            <li>Open Voice studio and complete Tasks 1–3 (Task 4 is optional).</li>
             <li>Rehear clips before training.</li>
-            <li>Click Train professional identity clone, then Listen to Cherry.</li>
+            <li>Click Train Cherry, then Listen to Cherry.</li>
           </ol>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/app/voice" className="rounded-full bg-cherry px-5 py-3 text-white">
@@ -445,11 +461,15 @@ function CherryStage({ listenOnly = false }: { listenOnly?: boolean }) {
 
         <p className="mt-5 font-serif text-3xl text-[#F6F0E6]">Cherry</p>
         <p className={`mt-1 text-sm font-medium ${toneClass(state)}`}>
-          {listenOnly && state === "idle" ? "Ready to introduce you" : stateLabel(state)}
+          {listenOnly && state === "idle"
+            ? "Ready to introduce you"
+            : !agent && (state === "connecting" || state === "initializing" || state === "idle")
+              ? "Connecting…"
+              : stateLabel(state)}
         </p>
-        <p className="mt-1 text-xs text-white/45">
-          {agent ? "Connected" : "Waiting for Cherry…"}
-        </p>
+        {agent && state !== "connecting" && state !== "initializing" ? (
+          <p className="mt-1 text-xs text-white/45">Live</p>
+        ) : null}
 
         {!listenOnly ? (
           <>

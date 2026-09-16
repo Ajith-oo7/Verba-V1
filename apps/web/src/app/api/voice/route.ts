@@ -4,7 +4,8 @@ import { getSessionUser } from "@/lib/auth";
 import { geminiJson } from "@/lib/gemini";
 import { transcribeFile } from "@/lib/groq";
 import { ensureDir, voiceDir } from "@/lib/storage";
-import { ALL_REQUIRED_SLOTS, labelForSlot } from "@/lib/voice-training";
+import { ALL_SLOTS, REQUIRED_SLOTS, labelForSlot } from "@/lib/voice-training";
+import { createElevenLabsClone, deleteElevenLabsVoice, elevenLabsConfigured } from "@/lib/elevenlabs";
 import path from "path";
 import fs from "fs/promises";
 
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const consent = String(form.get("consent") || "") === "true";
-    const gender = String(form.get("gender") || "unknown");
+    const gender = "unknown";
     const openPrompt = String(form.get("openPrompt") || "");
     if (!consent) {
       return NextResponse.json({ error: "Voice cloning requires explicit consent." }, { status: 400 });
@@ -72,15 +73,17 @@ export async function POST(req: NextRequest) {
       byLabel.set(label, { file, duration: durations[index] || 0 });
     }
 
-    const missing = ALL_REQUIRED_SLOTS.filter((id) => !byLabel.has(id));
+    const missing = REQUIRED_SLOTS.filter((id) => !byLabel.has(id));
     if (missing.length) {
       return NextResponse.json(
         {
-          error: `Complete all 4 training tasks first. Missing: ${missing.map(labelForSlot).join(", ")}.`,
+          error: `Complete Tasks 1–3 first. Missing: ${missing.map(labelForSlot).join(", ")}. Task 4 is optional.`,
         },
         { status: 400 },
       );
     }
+
+    const submittedLabels = ALL_SLOTS.filter((id) => byLabel.has(id));
 
     const dir = await ensureDir(path.join(voiceDir(), user.id));
     const transcriptByLabel: Record<string, string> = {};
@@ -88,7 +91,7 @@ export async function POST(req: NextRequest) {
     let longestPath = "";
     let bestBytes = 0;
 
-    for (const label of ALL_REQUIRED_SLOTS) {
+    for (const label of submittedLabels) {
       const item = byLabel.get(label)!;
       const file = item.file;
       const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : ".webm";
@@ -125,19 +128,63 @@ export async function POST(req: NextRequest) {
     const referencePath =
       pathByLabel.professional || pathByLabel.open || pathByLabel.reading || longestPath;
 
-    const identityProfile = await buildIdentityProfile({
-      gender,
-      openPrompt,
-      transcriptByLabel,
-      durations: Object.fromEntries(
-        ALL_REQUIRED_SLOTS.map((id) => [id, byLabel.get(id)?.duration || 0]),
-      ),
-    });
+    let identityProfile: IdentityProfile;
+    try {
+      identityProfile = await buildIdentityProfile({
+        gender,
+        openPrompt,
+        transcriptByLabel,
+        durations: Object.fromEntries(
+          submittedLabels.map((id) => [id, byLabel.get(id)?.duration || 0]),
+        ),
+      });
+    } catch (error) {
+      console.error("Identity profile build failed, using fallback:", error);
+      identityProfile = fallbackIdentityProfile(gender);
+    }
 
-    const ttsVoice =
-      gender === "male"
-        ? process.env.CHERRY_MALE_VOICE || "troy"
-        : process.env.CHERRY_FEMALE_VOICE || "hannah";
+    const existing = await prisma.voiceProfile.findUnique({ where: { userId: user.id } });
+    let elevenLabsVoiceId = existing?.elevenLabsVoiceId || "";
+    let cloneReady = Boolean(referencePath);
+    let ttsVoice = process.env.CHERRY_EDGE_VOICE || "en-US-JennyNeural";
+    let cloneWarning = "";
+
+    // IVC needs a paid ElevenLabs plan; ELEVEN_SKIP_CLONE / elevenLabsConfigured() gates this.
+    if (elevenLabsConfigured()) {
+      try {
+        if (elevenLabsVoiceId) {
+          await deleteElevenLabsVoice(elevenLabsVoiceId);
+        }
+        const cloneFiles = Array.from(
+          new Set(
+            [
+              pathByLabel.professional,
+              pathByLabel.open,
+              pathByLabel.reading,
+              pathByLabel["recruiter-self"],
+            ].filter(Boolean) as string[],
+          ),
+        ).slice(0, 3);
+
+        elevenLabsVoiceId = await createElevenLabsClone({
+          name: `Verba ${user.name || user.id}`.slice(0, 80),
+          filePaths: cloneFiles.length ? cloneFiles : [referencePath],
+          description: "Cherry voice clone for recruiter screening calls",
+          removeBackgroundNoise: false,
+        });
+        ttsVoice = `elevenlabs:${elevenLabsVoiceId}`;
+        cloneReady = true;
+      } catch (error) {
+        console.error("ElevenLabs clone failed:", error);
+        cloneWarning =
+          error instanceof Error ? error.message : "ElevenLabs clone failed; Edge TTS will be used.";
+        elevenLabsVoiceId = "";
+        cloneReady = Boolean(referencePath);
+      }
+    } else if (process.env.ELEVEN_LABS_KEY || process.env.ELEVEN_API_KEY) {
+      cloneWarning =
+        "ElevenLabs Instant Voice Cloning is unavailable on this plan; samples saved for Edge TTS.";
+    }
 
     const voiceProfile = await prisma.voiceProfile.upsert({
       where: { userId: user.id },
@@ -145,7 +192,8 @@ export async function POST(req: NextRequest) {
         consentAt: new Date(),
         gender,
         referencePath,
-        cloneReady: Boolean(referencePath),
+        elevenLabsVoiceId,
+        cloneReady,
         conversationJson: JSON.stringify(identityProfile),
         ttsVoice,
       },
@@ -154,7 +202,8 @@ export async function POST(req: NextRequest) {
         consentAt: new Date(),
         gender,
         referencePath,
-        cloneReady: Boolean(referencePath),
+        elevenLabsVoiceId,
+        cloneReady,
         conversationJson: JSON.stringify(identityProfile),
         ttsVoice,
       },
@@ -166,7 +215,9 @@ export async function POST(req: NextRequest) {
       identityProfile,
       conversation: identityProfile.conversation_profile,
       transcripts: transcriptByLabel,
-      samples: ALL_REQUIRED_SLOTS.length,
+      samples: submittedLabels.length,
+      elevenLabsVoiceId: elevenLabsVoiceId || null,
+      cloneWarning: cloneWarning || null,
     });
   } catch (error) {
     console.error("Voice training failed:", error);
@@ -181,6 +232,48 @@ export async function POST(req: NextRequest) {
       { status: 502 },
     );
   }
+}
+
+async function fallbackIdentityProfile(gender: string): Promise<IdentityProfile> {
+  return {
+    voice_profile: {
+      gender,
+      clone_ready: true,
+      notes: "Reference audio saved; identity notes pending richer analysis.",
+    },
+    speech_profile: {
+      pace: "medium",
+      clarity: "clear",
+      accent_notes: "unknown",
+      pronunciation_notes: "Clear enough for a phone screen.",
+    },
+    conversation_profile: {
+      formality: "professional",
+      answerLength: "medium",
+      typicalPhrases: [],
+      energy: "steady",
+      pause_style: "natural pauses",
+      notes: "Sound like a real candidate on a phone screen.",
+    },
+    professional_profile: {
+      screen_tone: "warm",
+      confidence: "steady",
+      structure: "conversational",
+      notes: "Professional phone tone.",
+    },
+    recruiter_answer_profile: {
+      typical_answer_length: "medium",
+      formality: "professional",
+      confidence: "steady",
+      favorite_phrases: [],
+      how_they_open: "Lead with the point.",
+      notes: "Mirror a calm, direct screening style.",
+    },
+    formality: "professional",
+    answerLength: "medium",
+    typicalPhrases: [],
+    notes: "Sound like a real candidate on a phone screen.",
+  };
 }
 
 async function buildIdentityProfile(input: {
@@ -219,8 +312,14 @@ TASK 3 — Open conversation (prompt: ${input.openPrompt || "n/a"}):
 Duration ${d.open || 0}s
 ${t.open || "(empty)"}
 
-TASK 4 — Natural recruiter answers:
-${recruiterBlock}
+TASK 4 — Natural recruiter answers (OPTIONAL — may be empty if skipped):
+${
+  ["recruiter-self", "recruiter-why", "recruiter-salary", "recruiter-reloc"].some((k) => t[k]?.trim())
+    ? recruiterBlock
+    : "(skipped — infer recruiter style from Tasks 2–3 only; do not invent quotes)"
+}
+
+If Task 4 is empty, still fill recruiter_answer_profile using Task 2 + Task 3. Do not invent quotes they never said.
 
 Return JSON only with this exact shape:
 {

@@ -24,6 +24,12 @@ export async function GET() {
           consentAt: voiceProfile.consentAt,
           conversation: safeParse(voiceProfile.conversationJson),
           hasReference: Boolean(voiceProfile.referencePath),
+          elevenLabsVoiceId: voiceProfile.elevenLabsVoiceId || "",
+          engine: voiceProfile.elevenLabsVoiceId
+            ? "elevenlabs"
+            : voiceProfile.ttsVoice?.startsWith("elevenlabs:")
+              ? "elevenlabs"
+              : "edge",
         }
       : null,
     samples: samples.map((sample) => ({

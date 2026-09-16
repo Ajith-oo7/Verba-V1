@@ -16,7 +16,7 @@ _MODEL_ERROR: str | None = None
 
 
 def _load_timeout_sec() -> float:
-    return float(os.getenv("CHERRY_CLONE_LOAD_TIMEOUT", "12"))
+    return float(os.getenv("CHERRY_CLONE_LOAD_TIMEOUT", "8"))
 
 
 def _synth_timeout_sec() -> float:
@@ -33,14 +33,19 @@ class ChatterboxTTS(tts.TTS):
             num_channels=1,
         )
         self._reference_wav = reference_wav
-        self._gender = gender
         self._nano = nano
         self._failed = False
 
     def synthesize(
         self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS
     ) -> tts.ChunkedStream:
-        return ChatterboxStream(tts=self, input_text=text, conn_options=conn_options)
+        from edge_tts_engine import sanitize_tts_text
+
+        return ChatterboxStream(
+            tts=self,
+            input_text=sanitize_tts_text(text),
+            conn_options=conn_options,
+        )
 
 
 class ChatterboxStream(tts.ChunkedStream):
@@ -100,9 +105,9 @@ class ChatterboxStream(tts.ChunkedStream):
         wav = model.generate(
             text,
             audio_prompt_path=self._tts._reference_wav,
-            exaggeration=float(os.getenv("CHERRY_CLONE_EXAGGERATION", "0.45")),
+            exaggeration=float(os.getenv("CHERRY_CLONE_EXAGGERATION", "0.55")),
             cfg_weight=float(os.getenv("CHERRY_CLONE_CFG", "0.5")),
-            temperature=float(os.getenv("CHERRY_CLONE_TEMP", "0.7")),
+            temperature=float(os.getenv("CHERRY_CLONE_TEMP", "0.75")),
         )
         tensor = wav.detach().cpu()
         if tensor.ndim > 1:
@@ -112,8 +117,8 @@ class ChatterboxStream(tts.ChunkedStream):
         return pcm, sr
 
     async def _edge_fallback(self, output_emitter: tts.AudioEmitter, text: str) -> None:
-        from edge_tts_engine import EdgeTTS, edge_voice_for_gender
+        from edge_tts_engine import EdgeTTS
 
-        edge = EdgeTTS(voice=edge_voice_for_gender(self._tts._gender))
+        edge = EdgeTTS()
         stream = edge.synthesize(text, conn_options=self._conn_options)
         await stream._run(output_emitter)

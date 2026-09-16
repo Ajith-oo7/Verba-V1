@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ALL_REQUIRED_SLOTS,
+  ALL_SLOTS,
   OPEN_PROMPTS,
   OPEN_TASK,
+  OPTIONAL_SLOTS,
   PROFESSIONAL_PASSAGE,
   READING_PASSAGE,
   RECRUITER_QUESTIONS,
   RECRUITER_TASK,
+  REQUIRED_SLOTS,
   type SlotId,
 } from "@/lib/voice-training";
 
@@ -21,7 +23,7 @@ type SlotState = {
 type Step = 1 | 2 | 3 | 4;
 
 function emptySlots(): Record<SlotId, SlotState> {
-  return ALL_REQUIRED_SLOTS.reduce(
+  return ALL_SLOTS.reduce(
     (acc, id) => {
       acc[id] = { blob: null, url: null, durationSec: 0 };
       return acc;
@@ -31,7 +33,6 @@ function emptySlots(): Record<SlotId, SlotState> {
 }
 
 export default function VoicePage() {
-  const [gender, setGender] = useState("female");
   const [consent, setConsent] = useState(false);
   const [slots, setSlots] = useState(emptySlots);
   const [step, setStep] = useState<Step>(1);
@@ -184,22 +185,24 @@ export default function VoicePage() {
       setStatus("Consent is required before Cherry can learn your voice.");
       return;
     }
-    const missing = ALL_REQUIRED_SLOTS.filter((id) => !slots[id].blob);
+    const missing = REQUIRED_SLOTS.filter((id) => !slots[id].blob);
     if (missing.length) {
       setOk(false);
-      setStatus(`Finish all 4 tasks first. ${missing.length} recording${missing.length === 1 ? "" : "s"} still missing.`);
+      setStatus(
+        `Finish Tasks 1–3 first. ${missing.length} required recording${missing.length === 1 ? "" : "s"} still missing.`,
+      );
       return;
     }
 
     setBusy(true);
     setOk(null);
-    setStatus("Building your professional identity clone — voice, speech, and recruiter style…");
+    setStatus("Building your professional identity clone — voice, speech, and style…");
     try {
       const body = new FormData();
       body.set("consent", "true");
-      body.set("gender", gender);
       body.set("openPrompt", openPrompt.prompt);
-      for (const id of ALL_REQUIRED_SLOTS) {
+      const toUpload = ALL_SLOTS.filter((id) => slots[id].blob);
+      for (const id of toUpload) {
         const slot = slots[id];
         if (!slot.blob) continue;
         const file = new File([slot.blob], `${id}-${Date.now()}.webm`, {
@@ -222,9 +225,19 @@ export default function VoicePage() {
       }
       setProfile((data.identityProfile || data.conversation || null) as Record<string, unknown> | null);
       setOk(true);
-      setStatus(
-        "Training complete. Cherry learned your voice and how you answer on screens. Open Cherry to Listen.",
-      );
+      if (data.elevenLabsVoiceId) {
+        setStatus(
+          "Training complete — ElevenLabs cloned your voice. Open Cherry → Listen to hear yourself.",
+        );
+      } else if (data.cloneWarning) {
+        setStatus(
+          "Training complete. Your recordings are saved. Voice cloning needs an ElevenLabs plan with Instant Voice Cloning — until then Cherry uses a default neural voice.",
+        );
+      } else {
+        setStatus(
+          "Training complete. Cherry learned your voice samples and how you answer on screens. Open Cherry to Listen.",
+        );
+      }
     } catch {
       setOk(false);
       setStatus("Voice training failed. Check your connection and try again.");
@@ -233,16 +246,36 @@ export default function VoicePage() {
     }
   }
 
-  const completed = ALL_REQUIRED_SLOTS.filter((id) => slots[id].blob).length;
-  const total = ALL_REQUIRED_SLOTS.length;
+  const requiredDone = REQUIRED_SLOTS.filter((id) => slots[id].blob).length;
+  const optionalDone = OPTIONAL_SLOTS.filter((id) => slots[id].blob).length;
   const recruiterQ = RECRUITER_QUESTIONS[recruiterIndex];
   const recruiterDone = RECRUITER_QUESTIONS.every((q) => slots[q.id].blob);
+  const missingRequired = REQUIRED_SLOTS.filter((id) => !slots[id].blob);
+  const trainBlockedReason = busy
+    ? "Training in progress…"
+    : activeId
+      ? "Stop the current recording first."
+      : !consent
+        ? "Check the consent box above before training."
+        : missingRequired.length
+          ? `Finish Tasks 1–3 first. Still need: ${missingRequired.join(", ")}.`
+          : "";
+
+  async function onTrainClick() {
+    if (trainBlockedReason) {
+      setOk(false);
+      setStatus(trainBlockedReason);
+      return;
+    }
+    await save();
+  }
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-serif text-5xl">Voice studio</h1>
       <p className="mt-3 text-mute">
-        Build a professional identity clone — not just a voice clone. Four tasks, about 11–14 minutes once.
+        Build a professional identity clone — not just a voice clone. Tasks 1–3 are required (~9–11 min). Task 4 is
+        optional and sharpens recruiter-answer style.
       </p>
 
       <div className="mt-5 rounded-2xl border border-cherry/30 bg-[#F8EDEA] px-4 py-3 text-sm text-ink">
@@ -264,18 +297,12 @@ export default function VoicePage() {
             }`}
           >
             Task {n}
+            {n === 4 ? " (optional)" : ""}
           </button>
         ))}
       </div>
 
       <div className="mt-6 grid gap-3 text-sm">
-        <label className="grid gap-1">
-          Voice gender for Cherry
-          <select value={gender} onChange={(e) => setGender(e.target.value)} disabled={busy || Boolean(activeId)}>
-            <option value="female">Female</option>
-            <option value="male">Male</option>
-          </select>
-        </label>
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
@@ -379,17 +406,23 @@ export default function VoicePage() {
             canNext={Boolean(slots.open.blob)}
             onBack={() => setStep(2)}
             onNext={() => setStep(4)}
+            nextLabel="Optional Task 4"
             disabled={Boolean(activeId) || busy}
           />
+          {Boolean(slots.reading.blob && slots.professional.blob && slots.open.blob) ? (
+            <p className="mt-3 text-sm text-mute">
+              Required tasks are done — train below now, or add optional Task 4 first.
+            </p>
+          ) : null}
         </TaskCard>
       ) : null}
 
       {step === 4 ? (
         <TaskCard
-          title={RECRUITER_TASK.title}
+          title={`${RECRUITER_TASK.title} (optional)`}
           purpose={RECRUITER_TASK.purpose}
           minutes={RECRUITER_TASK.minutes}
-          guidance={RECRUITER_TASK.guidance}
+          guidance={`${RECRUITER_TASK.guidance} You can skip this and train after Tasks 1–3.`}
         >
           <div className="mt-4 flex flex-wrap gap-2">
             {RECRUITER_QUESTIONS.map((q, index) => (
@@ -463,30 +496,36 @@ export default function VoicePage() {
 
           {!recruiterDone ? (
             <p className="mt-4 text-sm text-mute">
-              Answer all {RECRUITER_QUESTIONS.length} questions to unlock training.
+              Optional — answer any or all of these for a sharper recruiter voice profile, or skip and train now.
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-4 text-sm text-moss">All optional recruiter answers recorded.</p>
+          )}
         </TaskCard>
       ) : null}
 
       <div className="mt-8 rounded-2xl bg-white p-5 shadow-card">
         <p className="text-sm text-mute">
-          {completed} of {total} recordings · ~11–14 minutes total
+          Required: {requiredDone} of {REQUIRED_SLOTS.length}
+          {optionalDone > 0 ? ` · Optional Task 4: ${optionalDone} of ${OPTIONAL_SLOTS.length}` : " · Task 4 optional"}
         </p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-sand">
           <div
             className="h-full rounded-full bg-moss transition-all duration-300"
-            style={{ width: `${(completed / total) * 100}%` }}
+            style={{ width: `${(requiredDone / REQUIRED_SLOTS.length) * 100}%` }}
           />
         </div>
         <button
           type="button"
-          disabled={busy || Boolean(activeId) || completed < total || !consent}
-          onClick={() => void save()}
+          disabled={busy}
+          onClick={() => void onTrainClick()}
           className="mt-5 w-full rounded-full bg-cherry py-3 text-white disabled:opacity-50"
         >
-          {busy ? "Training Cherry…" : "Train professional identity clone"}
+          {busy ? "Training Cherry…" : "Train Cherry"}
         </button>
+        {trainBlockedReason && !busy ? (
+          <p className="mt-2 text-sm text-mute">{trainBlockedReason}</p>
+        ) : null}
         {status ? (
           <p className={`mt-3 text-sm ${ok === false ? "text-cherry" : ok ? "text-moss" : "text-mute"}`}>{status}</p>
         ) : null}
@@ -610,12 +649,14 @@ function StepNav({
   canNext,
   onBack,
   onNext,
+  nextLabel = "Continue",
   disabled,
 }: {
   canBack?: boolean;
   canNext?: boolean;
   onBack?: () => void;
   onNext?: () => void;
+  nextLabel?: string;
   disabled?: boolean;
 }) {
   return (
@@ -637,7 +678,7 @@ function StepNav({
           onClick={onNext}
           className="rounded-full bg-ink px-4 py-2 text-sm text-paper disabled:opacity-40"
         >
-          Continue
+          {nextLabel}
         </button>
       ) : null}
     </div>
